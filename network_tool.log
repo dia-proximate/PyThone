@@ -1,0 +1,18 @@
+
+Tracing route to google.com [142.250.71.206]
+over a maximum of 30 hops:
+
+1    <1 ms    <1 ms    <1 ms  192.168.123.1
+2     *        *        *     Request timed out.
+3    22 ms     8 ms    11 ms  10.254.30.113
+4    15 ms     7 ms    12 ms  10.254.19.189
+5     4 ms     5 ms     6 ms  10.254.4.217
+6     8 ms     8 ms    13 ms  112.197.12.218
+7    12 ms     8 ms     5 ms  112.197.12.217
+8    66 ms    44 ms    41 ms  10.254.20.21
+9    49 ms    48 ms    45 ms  74.125.147.116
+10    44 ms    39 ms    38 ms  142.251.67.15
+11    39 ms    43 ms    43 ms  142.250.225.255
+12    47 ms    47 ms    50 ms  nchkgb-aa-in-f14.1e100.net [142.250.71.206]
+
+Trace complete.
