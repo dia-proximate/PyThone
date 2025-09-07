@@ -1,164 +1,178 @@
 import subprocess
 import socket
-import requests
+import getpass
+import platform
+import datetime
 import os
-from colorama import Fore, init
-import speedtest  # cần cài speedtest-cli
+import shutil
 from rich.console import Console
-from rich.table import Table
+from rich.prompt import Prompt
 
-init(autoreset=True)
 console = Console()
 
-LOG_FILE = "network_tool.log"
+# ========== Config ==========
+LOG_DIR = r"C:\NetworkToolLogs"   # thư mục log local
+LOG_FILE = os.path.join(LOG_DIR, "network_tool.log")
+
+# Shared folder (cần thay đổi theo môi trường thật)
+SHARED_FOLDER = r"\\server\share\NetworkLogs"
+
+# Đảm bảo thư mục log local tồn tại
+os.makedirs(LOG_DIR, exist_ok=True)
 
 
-def log_result(text):
+# ========== Logging ==========
+def write_log(text):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(text + "\n")
+        f.write(f"[{datetime.datetime.now()}] {text}\n")
 
 
-def run_command_realtime(cmd, color=Fore.GREEN):
-    try:
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
-        )
-        for line in iter(process.stdout.readline, ''):
-            if not line:
-                break
-            print(color + line.strip())
-            log_result(line.strip())
-        process.stdout.close()
-        process.wait()
-    except Exception as e:
-        print(Fore.RED + f"Lỗi: {e}")
-        log_result(f"Lỗi: {e}")
-
-
+# ========== Functions ==========
 def ping_host():
-    host = input("Nhập IP hoặc domain để ping: ").strip()
-    print(Fore.CYAN + f"Đang ping {host}...\n")
-    run_command_realtime(["ping", host])
+    host = Prompt.ask("Enter host (IP/domain)")
+    try:
+        process = subprocess.Popen(["ping", host], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in process.stdout:
+            console.print(line.strip(), style="cyan")
+            write_log(line.strip())
+    except Exception as e:
+        console.print(f"Error: {e}", style="bold red")
+        write_log(f"Ping error: {e}")
 
 
 def tracert_host():
-    host = input("Nhập IP hoặc domain để tracert: ").strip()
-    print(Fore.CYAN + f"Đang tracert {host}...\n")
-    run_command_realtime(["tracert", host])
+    host = Prompt.ask("Enter host (IP/domain)")
+    try:
+        process = subprocess.Popen(["tracert", host], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in process.stdout:
+            console.print(line.strip(), style="yellow")
+            write_log(line.strip())
+    except Exception as e:
+        console.print(f"Error: {e}", style="bold red")
+        write_log(f"Tracert error: {e}")
 
 
 def nslookup_domain():
-    domain = input("Nhập domain để nslookup: ").strip()
-    print(Fore.CYAN + f"Đang nslookup {domain}...\n")
-    run_command_realtime(["nslookup", domain])
-
-
-def check_tcp_connection():
-    host = input("Nhập IP hoặc domain: ").strip()
-    port = int(input("Nhập port: ").strip())
-    print(Fore.CYAN + f"Đang kiểm tra TCP {host}:{port}...\n")
+    domain = Prompt.ask("Enter domain")
     try:
-        sock = socket.create_connection((host, port), timeout=5)
-        print(Fore.GREEN + f"Kết nối tới {host}:{port} thành công")
-        log_result(f"Kết nối tới {host}:{port} thành công")
+        process = subprocess.Popen(["nslookup", domain], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in process.stdout:
+            console.print(line.strip(), style="green")
+            write_log(line.strip())
+    except Exception as e:
+        console.print(f"Error: {e}", style="bold red")
+        write_log(f"Nslookup error: {e}")
+
+
+def check_tcp_port():
+    host = Prompt.ask("Enter host (IP/domain)")
+    port = int(Prompt.ask("Enter port"))
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        result = sock.connect_ex((host, port))
+        if result == 0:
+            msg = f"Port {port} on {host} is OPEN"
+            console.print(msg, style="bold green")
+        else:
+            msg = f"Port {port} on {host} is CLOSED"
+            console.print(msg, style="bold red")
+        write_log(msg)
         sock.close()
     except Exception as e:
-        print(Fore.RED + f"Không kết nối được {host}:{port} ({e})")
-        log_result(f"Không kết nối được {host}:{port} ({e})")
+        console.print(f"Error: {e}", style="bold red")
+        write_log(f"TCP check error: {e}")
 
 
 def get_serial_number():
-    print(Fore.CYAN + "Đang lấy Serial Number...\n")
-    run_command_realtime(
-        ["wmic", "bios", "get", "serialnumber"], color=Fore.YELLOW
-    )
-
-
-def open_log_file():
-    print(Fore.CYAN + f"Mở log file: {os.path.abspath(LOG_FILE)}\n")
     try:
-        os.startfile(LOG_FILE)  # chỉ Windows
-    except Exception as e:
-        print(Fore.RED + f"Lỗi khi mở log: {e}")
-
-
-def show_ipconfig():
-    print(Fore.CYAN + "Thông tin IP configuration...\n")
-    run_command_realtime(["ipconfig", "/all"], color=Fore.MAGENTA)
-
-
-def check_internet_connectivity():
-    print(Fore.CYAN + "Kiểm tra kết nối Internet...\n")
-    try:
-        r = requests.get("https://www.google.com", timeout=5)
-        if r.status_code == 200:
-            print(Fore.GREEN + "Internet OK (truy cập được Google)")
-            log_result("Internet OK (truy cập được Google)")
+        cmd = ["powershell", "-Command", "(Get-WmiObject win32_bios).SerialNumber"]
+        serial = subprocess.check_output(cmd, text=True).strip()
+        if serial:
+            console.print(f"Serial Number: {serial}", style="bold magenta")
+            write_log(f"Serial Number: {serial}")
         else:
-            print(Fore.RED + f"Kết nối lỗi: {r.status_code}")
-            log_result(f"Kết nối lỗi: {r.status_code}")
+            console.print("Serial Number: N/A", style="bold red")
+            write_log("Serial Number: N/A")
     except Exception as e:
-        print(Fore.RED + f"Không có Internet ({e})")
-        log_result(f"Không có Internet ({e})")
+        console.print(f"Error: {e}", style="bold red")
+        write_log(f"Serial error: {e}")
 
 
-def clear_log_file():
+def get_hostname():
+    hostname = socket.gethostname()
+    console.print(f"Hostname: {hostname}", style="bold blue")
+    write_log(f"Hostname: {hostname}")
+
+
+def get_username():
+    username = getpass.getuser()
+    console.print(f"Username: {username}", style="bold blue")
+    write_log(f"Username: {username}")
+
+
+def get_os_version():
+    os_version = platform.platform()
+    console.print(f"OS Version: {os_version}", style="bold blue")
+    write_log(f"OS Version: {os_version}")
+
+
+def get_ip_address():
     try:
-        open(LOG_FILE, "w", encoding="utf-8").close()
-        print(Fore.GREEN + "Log file đã được xóa sạch.")
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+        console.print(f"IP Address: {ip}", style="bold blue")
+        write_log(f"IP Address: {ip}")
     except Exception as e:
-        print(Fore.RED + f"Lỗi khi xóa log: {e}")
+        console.print(f"Error: {e}", style="bold red")
+        write_log(f"IP error: {e}")
 
 
-def run_speedtest():
-    print(Fore.CYAN + "Đang chạy speedtest...\n")
+def quick_diagnostic():
+    console.print("[Quick Diagnostic Running...]", style="bold yellow")
+    get_hostname()
+    get_username()
+    get_os_version()
+    get_ip_address()
+    get_serial_number()
+    console.print("[Quick Diagnostic Completed - Results logged]", style="bold green")
+
+
+def show_log_path():
+    console.print(f"Log file is saved at: {LOG_FILE}", style="bold cyan")
+
+
+def send_log_to_shared():
     try:
-        st = speedtest.Speedtest()
-        st.get_best_server()
-        download = st.download() / 1_000_000  # Mbps
-        upload = st.upload() / 1_000_000
-        ping = st.results.ping
-
-        # hiển thị bằng rich table
-        table = Table(title="Speedtest Result", style="cyan")
-        table.add_column("Metric", style="magenta", justify="center")
-        table.add_column("Value", style="green", justify="center")
-
-        table.add_row("Ping", f"{ping:.2f} ms")
-        table.add_row("Download", f"{download:.2f} Mbps")
-        table.add_row("Upload", f"{upload:.2f} Mbps")
-
-        console.print(table)
-
-        result = (f"Ping: {ping:.2f} ms | "
-                  f"Download: {download:.2f} Mbps | "
-                  f"Upload: {upload:.2f} Mbps")
-        log_result("Speedtest -> " + result)
+        os.makedirs(SHARED_FOLDER, exist_ok=True)
+        dest = os.path.join(SHARED_FOLDER, os.path.basename(LOG_FILE))
+        shutil.copy(LOG_FILE, dest)
+        console.print(f"Log file copied to shared folder: {dest}", style="bold green")
+        write_log(f"Log copied to shared folder: {dest}")
     except Exception as e:
-        print(Fore.RED + f"Lỗi speedtest: {e}")
-        log_result(f"Lỗi speedtest: {e}")
+        console.print(f"Error copying log: {e}", style="bold red")
+        write_log(f"Shared log copy error: {e}")
 
 
-def main():
+# ========== Menu ==========
+def menu():
     while True:
-        print(Fore.CYAN + "\n=== Network Troubleshoot Tool ===")
-        print("1. Ping host")
-        print("2. Tracert host")
-        print("3. Nslookup domain")
-        print("4. Check TCP connection")
-        print("5. Get Serial Number")
-        print("6. Exit")
-        print("7. Open log file")
-        print("8. Show IP config")
-        print("9. Check Internet connectivity")
-        print("10. Clear log file")
-        print("11. Speedtest")
-        print(Fore.YELLOW + f"\n[Log file: {os.path.abspath(LOG_FILE)}]")
+        console.print("\n=== Network Troubleshooting Tool V2.1 ===", style="bold underline")
+        console.print("1. Ping Host", style="cyan")
+        console.print("2. Traceroute to Host", style="cyan")
+        console.print("3. Nslookup Domain", style="cyan")
+        console.print("4. Check TCP Port Connection", style="cyan")
+        console.print("5. Get Serial Number", style="magenta")
+        console.print("6. Get Hostname", style="blue")
+        console.print("7. Get Username", style="blue")
+        console.print("8. Get OS Version", style="blue")
+        console.print("9. Get IP Address", style="blue")
+        console.print("10. Quick Diagnostic (Hostname, Username, OS, IP, Serial)", style="yellow")
+        console.print("11. Show Log File Path", style="cyan")
+        console.print("12. Send Log to Shared Folder", style="green")
+        console.print("0. Exit", style="red")
 
-        choice = input(Fore.WHITE + "Chọn chức năng (1-11): ").strip()
+        choice = Prompt.ask("Select option", choices=[str(i) for i in range(13)])
 
         if choice == "1":
             ping_host()
@@ -167,25 +181,27 @@ def main():
         elif choice == "3":
             nslookup_domain()
         elif choice == "4":
-            check_tcp_connection()
+            check_tcp_port()
         elif choice == "5":
             get_serial_number()
         elif choice == "6":
-            print(Fore.CYAN + "Thoát chương trình.")
-            break
+            get_hostname()
         elif choice == "7":
-            open_log_file()
+            get_username()
         elif choice == "8":
-            show_ipconfig()
+            get_os_version()
         elif choice == "9":
-            check_internet_connectivity()
+            get_ip_address()
         elif choice == "10":
-            clear_log_file()
+            quick_diagnostic()
         elif choice == "11":
-            run_speedtest()
-        else:
-            print(Fore.RED + "Lựa chọn không hợp lệ.")
+            show_log_path()
+        elif choice == "12":
+            send_log_to_shared()
+        elif choice == "0":
+            console.print("Exiting tool...", style="bold red")
+            break
 
 
 if __name__ == "__main__":
-    main()
+    menu()
